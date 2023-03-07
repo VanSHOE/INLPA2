@@ -234,11 +234,10 @@ def train(model, data, optimizer, criterion, valDat, maxPat=5):
 
         validationLoss = getLossDataset(valDat, model)
         print(f"Validation loss: {validationLoss}")
-        if validationLoss - epoch_loss / len(dataL) > 5:
+        if validationLoss > prevValLoss:
             print("Validation loss increased")
             if es_patience > 0:
                 es_patience -= 1
-
             else:  # early stopping
                 print("Early stopping")
                 # model = torch.load(f"{MODEL}.pt")
