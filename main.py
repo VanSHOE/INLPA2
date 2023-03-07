@@ -1,6 +1,8 @@
 import torch
+import torch.nn as nn
 import torchtext
 import numpy as np
+from torch.utils.data import DataLoader
 from pprint import pprint
 import conllu
 
@@ -8,6 +10,7 @@ sentenceLens = {}
 device = "cuda" if torch.cuda.is_available() else "cpu"
 CUT_OFF = 40
 BATCH_SIZE = 32
+MODEL = "Test"
 
 
 class Data(torch.utils.data.Dataset):
@@ -17,6 +20,10 @@ class Data(torch.utils.data.Dataset):
         self.cutoff = CUT_OFF
 
         self.tags = tags
+
+        # lowercase everything
+        self.sentences = [[token.lower() for token in sentence] for sentence in self.sentences]
+        self.tags = [[token.lower() for token in sentence] for sentence in self.tags]
 
         # zip em together
         self.sentences = [list(zip(sentence, tag)) for sentence, tag in zip(self.sentences, self.tags)]
@@ -101,7 +108,7 @@ class Data(torch.utils.data.Dataset):
         self.padIdx = self.w2idx["<pad>"]
         self.tagPadIdx = self.tagW2idx["<pad>"]
 
-    def handle_unknowns(self, vocab_set, vocab):
+    def handle_unknowns(self, vocab_set, vocab, tagVocab_set, tagVocab):
         for i in range(len(self.sentences)):
             for j in range(len(self.sentences[i])):
                 if self.sentences[i][j][0] not in vocab_set:
@@ -110,11 +117,31 @@ class Data(torch.utils.data.Dataset):
                         self.vocab.remove(self.sentences[i][j][0])
                     if self.sentences[i][j][0] in self.vocabSet:
                         self.vocabSet.remove(self.sentences[i][j][0])
-                    self.sentences[i][j] = "<unk>"
+                    t = list(self.sentences[i][j])
+                    t[0] = "<unk>"
+                    self.sentences[i][j] = tuple(t)
         self.w2idx = {w: i for i, w in enumerate(vocab)}
         self.idx2w = {i: w for i, w in enumerate(vocab)}
         self.sentencesIdx = torch.tensor([[self.w2idx[token[0]] for token in sentence] for sentence in self.sentences],
                                          device=self.device)
+
+        for i in range(len(self.sentences)):
+            for j in range(len(self.sentences[i])):
+                if self.sentences[i][j][1] not in tagVocab_set:
+                    # remove from vocab and vocab set
+                    if self.sentences[i][j][1] in self.tagVocab:
+                        self.tagVocab.remove(self.sentences[i][j][1])
+                    if self.sentences[i][j][1] in self.tagVocabSet:
+                        self.tagVocabSet.remove(self.sentences[i][j][1])
+                    t = list(self.sentences[i][j])
+                    t[1] = "<unk>"
+                    self.sentences[i][j] = tuple(t)
+
+        self.tagW2idx = {w: i for i, w in enumerate(tagVocab)}
+        self.tagIdx2w = {i: w for i, w in enumerate(tagVocab)}
+        self.tagSentencesIdx = torch.tensor(
+            [[self.tagW2idx[token[1]] for token in sentence] for sentence in self.sentences],
+            device=self.device)
 
     def __len__(self):
         return len(self.sentencesIdx)
@@ -124,8 +151,114 @@ class Data(torch.utils.data.Dataset):
         return self.sentencesIdx[idx], self.tagSentencesIdx[idx]
 
 
-input = open('./UD_English-Atis/en_atis-ud-train.conllu', 'r', encoding='utf-8')
-data = conllu.parse(input.read())
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, vocab_size, outputSize):
+        super(LSTM, self).__init__()  # call the init function of the parent class
+        self.device = device
+        self.num_layers = num_layers  # number of LSTM layers
+        self.hidden_size = hidden_size  # size of LSTM hidden state
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)  # LSTM layer
+        self.decoder = nn.Linear(hidden_size, outputSize)  # linear layer to map the hidden state to output classes
+        self.train_data = None
+
+        self.elayer = nn.Embedding(vocab_size, input_size)
+
+        self.to(self.device)
+
+    def forward(self, x, state=None):
+        # Set initial states for the LSTM layer or use the states passed from the previous time step
+        embeddings = self.elayer(x)
+
+        # Forward propagate through the LSTM layer
+        out, _ = self.lstm(embeddings)  # out: tensor of shape (batch_size, seq_length, hidden_size)
+        return self.decoder(out)
+
+
+def getLossDataset(data: Data, model):
+    model.eval()
+
+    dataL = DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)
+
+    criterion = nn.CrossEntropyLoss()
+    loss = 0
+
+    for i, (x, y) in enumerate(dataL):
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        output = model(x)
+
+        y = y.view(-1)
+        output = output.view(-1, output.shape[-1])
+
+        loss += criterion(output, y).item()
+
+    return loss / len(dataL)
+
+
+def train(model, data, optimizer, criterion, valDat, maxPat=5):
+    epoch_loss = 0
+    model.train()
+
+    dataL = DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)
+    lossDec = True
+    prevLoss = 10000000
+    prevValLoss = 10000000
+    epoch = 0
+    es_patience = maxPat
+    model.train_data = data
+    while lossDec:
+        epoch_loss = 0
+        for i, (x, y) in enumerate(dataL):
+            optimizer.zero_grad()
+            x = x.to(model.device)
+
+            y = y.to(model.device)
+
+            output = model(x)
+
+            y = y.view(-1)
+            output = output.view(-1, output.shape[-1])
+
+            loss = criterion(output, y)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+
+            # print loss every 100 batches
+            # if i % 100 == 0:
+            #     print(f"Epoch {epoch + 1} Batch {i} loss: {loss.item()}")
+
+        validationLoss = getLossDataset(valDat, model)
+        print(f"Validation loss: {validationLoss}")
+        if validationLoss - epoch_loss / len(dataL) > 5:
+            print("Validation loss increased")
+            if es_patience > 0:
+                es_patience -= 1
+
+            else:  # early stopping
+                print("Early stopping")
+                # model = torch.load(f"{MODEL}.pt")
+                model.load_state_dict(torch.load(f"{MODEL}.pt"))
+                lossDec = False
+        else:
+            # torch.save(model, f"{MODEL}.pt")
+            torch.save(model.state_dict(), f"{MODEL}.pt")
+            es_patience = maxPat
+        prevValLoss = validationLoss
+        model.train()
+        if epoch_loss / len(dataL) > prevLoss:
+            lossDec = False
+        prevLoss = epoch_loss / len(dataL)
+
+        print(f"Epoch {epoch + 1} loss: {epoch_loss / len(dataL)}")
+        epoch += 1
+
+
+inputT = open('./UD_English-Atis/en_atis-ud-train.conllu', 'r', encoding='utf-8')
+data = conllu.parse(inputT.read())
+val = open('./UD_English-Atis/en_atis-ud-dev.conllu', 'r', encoding='utf-8')
+valData = conllu.parse(val.read())
 tags = []
 sentences = []
 for sentence in data:
@@ -139,7 +272,44 @@ for sentence in data:
     sentences.append(unitSentence)
 
 trainData = Data(sentences, tags)
-for sentence, tag in trainData:
-    # convert back to word from idx
-    s = [(trainData.idx2w[int(idx)], trainData.tagIdx2w[int(tag)]) for idx, tag in zip(sentence, tag)]
-    pprint(s)
+
+tags = []
+sentences = []
+for sentence in valData:
+    unitTag = []
+    unitSentence = []
+    for token in sentence:
+        unitTag.append(token["upos"])
+        unitSentence.append(token["form"])
+
+    tags.append(unitTag)
+    sentences.append(unitSentence)
+
+valData = Data(sentences, tags)
+valData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
+
+model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
+model.train_data = trainData
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+criterion = nn.CrossEntropyLoss()
+
+train(model, trainData, optimizer, criterion, valData)
+model.eval()
+while True:
+    sent = str(input("input sentence: ")).split()
+
+    # convert to idx
+    for i in range(len(sent)):
+        if sent[i] in trainData.vocab:
+            sent[i] = trainData.w2idx[sent[i]]
+        else:
+            sent[i] = trainData.w2idx["<unk>"]
+    
+    sent = torch.tensor(sent).to(model.device)
+    output = model(sent)
+    # softmax and output tag
+    output = torch.nn.functional.softmax(output, dim=1)
+    _, predicted = torch.max(output, 1)
+
+    for i in range(len(sent)):
+        print(f"{trainData.idx2w[sent[i].item()]}: {trainData.tagIdx2w[predicted[i].item()]}")
