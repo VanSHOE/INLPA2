@@ -5,6 +5,11 @@ import numpy as np
 from torch.utils.data import DataLoader
 from pprint import pprint
 import conllu
+import random
+import time
+from sklearn.metrics import classification_report as cr
+
+random.seed(time.time())
 
 sentenceLens = {}
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -271,7 +276,7 @@ for sentence in data:
     tags.append(unitTag)
     sentences.append(unitSentence)
 
-trainData = Data(sentences, tags)
+trainData = Data(sentences.copy(), tags.copy())
 
 tags = []
 sentences = []
@@ -285,7 +290,7 @@ for sentence in valData:
     tags.append(unitTag)
     sentences.append(unitSentence)
 
-valData = Data(sentences, tags)
+valData = Data(sentences.copy(), tags.copy())
 valData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
 
 model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
@@ -309,56 +314,54 @@ for sentence in testData:
     tags.append(unitTag)
     sentences.append(unitSentence)
 
-testData = Data(sentences, tags)
+
+def accuracy(model, data):
+    correct = 0
+    total = 0
+    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        output = model(x)
+
+        y = y.view(-1)
+        output = output.view(-1, output.shape[-1])
+
+        _, predicted = torch.max(output, 1)
+        total += y.size(0)
+        correct += (predicted == y).sum().item()
+        return correct / total
+
+
+def runSkMetric(model, data):
+    y_true = []
+    y_pred = []
+
+    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        output = model(x)
+
+        y = y.view(-1)
+        output = output.view(-1, output.shape[-1])
+
+        _, predicted = torch.max(output, 1)
+        y_true.extend(y.tolist())
+        y_pred.extend(predicted.tolist())
+
+    return cr(y_true, y_pred)
+
+
+testData = Data(sentences.copy(), tags.copy())
 testData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
-# get accuracy
-correct = 0
-total = 0
-for i, (x, y) in enumerate(DataLoader(trainData, batch_size=BATCH_SIZE, shuffle=True)):
-    x = x.to(model.device)
-    y = y.to(model.device)
+print(f"Training Accuracy: {accuracy(model, trainData)}")
 
-    output = model(x)
+print(f"Validation Accuracy: {accuracy(model, valData)}")
 
-    y = y.view(-1)
-    output = output.view(-1, output.shape[-1])
+print(f"Testing Accuracy: {accuracy(model, testData)}")
 
-    _, predicted = torch.max(output, 1)
-    total += y.size(0)
-    correct += (predicted == y).sum().item()
-print(f"Accuracy: {correct / total}")
-correct = 0
-total = 0
-for i, (x, y) in enumerate(DataLoader(valData, batch_size=BATCH_SIZE, shuffle=True)):
-    x = x.to(model.device)
-    y = y.to(model.device)
-
-    output = model(x)
-
-    y = y.view(-1)
-    output = output.view(-1, output.shape[-1])
-
-    _, predicted = torch.max(output, 1)
-    total += y.size(0)
-    correct += (predicted == y).sum().item()
-
-print(f"Accuracy: {correct / total}")
-correct = 0
-total = 0
-for i, (x, y) in enumerate(DataLoader(testData, batch_size=BATCH_SIZE, shuffle=True)):
-    x = x.to(model.device)
-    y = y.to(model.device)
-
-    output = model(x)
-
-    y = y.view(-1)
-    output = output.view(-1, output.shape[-1])
-
-    _, predicted = torch.max(output, 1)
-    total += y.size(0)
-    correct += (predicted == y).sum().item()
-
-print(f"Accuracy: {correct / total}")
+pprint(runSkMetric(model, testData))
 exit(0)
 while True:
     sent = str(input("input sentence: ")).split()
