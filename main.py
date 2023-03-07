@@ -50,6 +50,9 @@ class Data(torch.utils.data.Dataset):
         # exit(1)
         self.vocab = set()
         self.tagVocab = set()
+        # add padding token
+        self.vocab.add("<pad>")
+        self.tagVocab.add("<pad>")
         self.mxSentSize = 0
         # self.mxSentSize = 20
         for sentence in self.sentences:
@@ -67,9 +70,6 @@ class Data(torch.utils.data.Dataset):
         self.vocab = list(self.vocab)
         self.tagVocab = list(self.tagVocab)
 
-        # add padding token
-        self.vocab.append("<pad>")
-        self.tagVocab.append("<pad>")
         # add Unknown
         if "<unk>" not in self.vocab:
             self.vocab.append("<unk>")
@@ -110,6 +110,12 @@ class Data(torch.utils.data.Dataset):
             device=self.device)
         self.padIdx = self.w2idx["<pad>"]
         self.tagPadIdx = self.tagW2idx["<pad>"]
+
+        self.bosIdx = self.w2idx["<bos>"]
+        self.botIdx = self.tagW2idx["<bot>"]
+
+        self.eosIdx = self.w2idx["<eos>"]
+        self.eotIdx = self.tagW2idx["<eot>"]
 
     def handle_unknowns(self, vocab_set, vocab, tagVocab_set, tagVocab):
         for i in range(len(self.sentences)):
@@ -182,7 +188,7 @@ def getLossDataset(data: Data, model):
 
     dataL = DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=data.tagPadIdx)
     loss = 0
 
     for i, (x, y) in enumerate(dataL):
@@ -249,12 +255,68 @@ def train(model, data, optimizer, criterion, valDat, maxPat=5):
             es_patience = maxPat
         prevValLoss = validationLoss
         model.train()
-        if epoch_loss / len(dataL) > prevLoss:
-            lossDec = False
+        # if epoch_loss / len(dataL) > prevLoss:
+        #     lossDec = False
         prevLoss = epoch_loss / len(dataL)
 
         print(f"Epoch {epoch + 1} loss: {epoch_loss / len(dataL)}")
         epoch += 1
+
+
+def accuracy(model, data):
+    model.eval()
+    correct = 0
+    total = 0
+    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        output = model(x)
+
+        y = y.view(-1)
+        output = output.view(-1, output.shape[-1])
+
+        _, predicted = torch.max(output, 1)
+        # print x as words
+        # print(x)
+        # print([model.train_data.idx2w[i] for i in x.view(-1).tolist()])
+        # print(x.view(-1).size(0))
+        # print(y.size(0))
+        # exit(22)
+        # only those are suitable in which x is not bos eos or pad
+        suitableIdx = [i for i in range(x.view(-1).size(0)) if x.view(-1)[i] != model.train_data.padIdx]
+        # test = x.view(-1)[suitableIdx].tolist()
+        # print([model.train_data.idx2w[i] for i in test])
+        # exit(0)
+        y_masked = y[suitableIdx]
+        total += y_masked.size(0)
+        correct += (predicted[suitableIdx] == y_masked).sum().item()
+    return correct / total
+
+
+def runSkMetric(model, data):
+    model.eval()
+    y_true = []
+    y_pred = []
+
+    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        output = model(x)
+
+        y = y.view(-1)
+        output = output.view(-1, output.shape[-1])
+        suitableIdx = [i for i in range(x.view(-1).size(0)) if x.view(-1)[i] != model.train_data.padIdx]
+        _, predicted = torch.max(output, 1)
+        y_masked = y[suitableIdx]
+        y_pred_masked = predicted[suitableIdx]
+        y_true.extend(y_masked.tolist())
+        y_pred.extend(y_pred_masked.tolist())
+
+    y_trueTag = [model.train_data.tagIdx2w[i] for i in y_true]
+    y_predTag = [model.train_data.tagIdx2w[i] for i in y_pred]
+    return cr(y_trueTag, y_predTag)
 
 
 inputT = open('./UD_English-Atis/en_atis-ud-train.conllu', 'r', encoding='utf-8')
@@ -293,8 +355,8 @@ valData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabS
 model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
 model.train_data = trainData
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-criterion = nn.CrossEntropyLoss()
-
+criterion = nn.CrossEntropyLoss(ignore_index=trainData.tagPadIdx)
+# print(f"Training Accuracy: {accuracy(model, trainData)}")
 train(model, trainData, optimizer, criterion, valData)
 model.eval()
 test = open('./UD_English-Atis/en_atis-ud-test.conllu', 'r', encoding='utf-8')
@@ -311,47 +373,6 @@ for sentence in testData:
     tags.append(unitTag)
     sentences.append(unitSentence)
 
-
-def accuracy(model, data):
-    correct = 0
-    total = 0
-    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
-        x = x.to(model.device)
-        y = y.to(model.device)
-
-        output = model(x)
-
-        y = y.view(-1)
-        output = output.view(-1, output.shape[-1])
-
-        _, predicted = torch.max(output, 1)
-        total += y.size(0)
-        correct += (predicted == y).sum().item()
-    return correct / total
-
-
-def runSkMetric(model, data):
-    y_true = []
-    y_pred = []
-
-    for i, (x, y) in enumerate(DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)):
-        x = x.to(model.device)
-        y = y.to(model.device)
-
-        output = model(x)
-
-        y = y.view(-1)
-        output = output.view(-1, output.shape[-1])
-
-        _, predicted = torch.max(output, 1)
-        y_true.extend(y.tolist())
-        y_pred.extend(predicted.tolist())
-
-    y_trueTag = [model.train_data.tagIdx2w[i] for i in y_true]
-    y_predTag = [model.train_data.tagIdx2w[i] for i in y_pred]
-    return cr(y_trueTag, y_predTag)
-
-
 testData = Data(sentences.copy(), tags.copy())
 testData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
 print(f"Training Accuracy: {accuracy(model, trainData)}")
@@ -359,7 +380,7 @@ print(f"Training Accuracy: {accuracy(model, trainData)}")
 print(f"Validation Accuracy: {accuracy(model, valData)}")
 
 print(f"Testing Accuracy: {accuracy(model, testData)}")
-
+# exit(0)
 print(runSkMetric(model, testData))
 # exit(0)
 while True:
