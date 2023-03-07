@@ -295,6 +295,71 @@ criterion = nn.CrossEntropyLoss()
 
 train(model, trainData, optimizer, criterion, valData)
 model.eval()
+test = open('./UD_English-Atis/en_atis-ud-test.conllu', 'r', encoding='utf-8')
+testData = conllu.parse(test.read())
+tags = []
+sentences = []
+for sentence in testData:
+    unitTag = []
+    unitSentence = []
+    for token in sentence:
+        unitTag.append(token["upos"])
+        unitSentence.append(token["form"])
+
+    tags.append(unitTag)
+    sentences.append(unitSentence)
+
+testData = Data(sentences, tags)
+testData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
+# get accuracy
+correct = 0
+total = 0
+for i, (x, y) in enumerate(DataLoader(trainData, batch_size=BATCH_SIZE, shuffle=True)):
+    x = x.to(model.device)
+    y = y.to(model.device)
+
+    output = model(x)
+
+    y = y.view(-1)
+    output = output.view(-1, output.shape[-1])
+
+    _, predicted = torch.max(output, 1)
+    total += y.size(0)
+    correct += (predicted == y).sum().item()
+print(f"Accuracy: {correct / total}")
+correct = 0
+total = 0
+for i, (x, y) in enumerate(DataLoader(valData, batch_size=BATCH_SIZE, shuffle=True)):
+    x = x.to(model.device)
+    y = y.to(model.device)
+
+    output = model(x)
+
+    y = y.view(-1)
+    output = output.view(-1, output.shape[-1])
+
+    _, predicted = torch.max(output, 1)
+    total += y.size(0)
+    correct += (predicted == y).sum().item()
+
+print(f"Accuracy: {correct / total}")
+correct = 0
+total = 0
+for i, (x, y) in enumerate(DataLoader(testData, batch_size=BATCH_SIZE, shuffle=True)):
+    x = x.to(model.device)
+    y = y.to(model.device)
+
+    output = model(x)
+
+    y = y.view(-1)
+    output = output.view(-1, output.shape[-1])
+
+    _, predicted = torch.max(output, 1)
+    total += y.size(0)
+    correct += (predicted == y).sum().item()
+
+print(f"Accuracy: {correct / total}")
+exit(0)
 while True:
     sent = str(input("input sentence: ")).split()
 
@@ -304,7 +369,7 @@ while True:
             sent[i] = trainData.w2idx[sent[i]]
         else:
             sent[i] = trainData.w2idx["<unk>"]
-    
+
     sent = torch.tensor(sent).to(model.device)
     output = model(sent)
     # softmax and output tag
