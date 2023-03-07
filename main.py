@@ -330,7 +330,7 @@ def accuracy(model, data):
         _, predicted = torch.max(output, 1)
         total += y.size(0)
         correct += (predicted == y).sum().item()
-        return correct / total
+    return correct / total
 
 
 def runSkMetric(model, data):
