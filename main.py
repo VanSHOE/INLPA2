@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torchtext
-import numpy as np
 from torch.utils.data import DataLoader
 from pprint import pprint
 import conllu
@@ -350,7 +348,9 @@ def runSkMetric(model, data):
         y_true.extend(y.tolist())
         y_pred.extend(predicted.tolist())
 
-    return cr(y_true, y_pred)
+    y_trueTag = [model.train_data.tagIdx2w[i] for i in y_true]
+    y_predTag = [model.train_data.tagIdx2w[i] for i in y_pred]
+    return cr(y_trueTag, y_predTag)
 
 
 testData = Data(sentences.copy(), tags.copy())
@@ -361,10 +361,11 @@ print(f"Validation Accuracy: {accuracy(model, valData)}")
 
 print(f"Testing Accuracy: {accuracy(model, testData)}")
 
-pprint(runSkMetric(model, testData))
-exit(0)
+print(runSkMetric(model, testData))
+# exit(0)
 while True:
     sent = str(input("input sentence: ")).split()
+    orig = sent.copy()
 
     # convert to idx
     for i in range(len(sent)):
@@ -380,4 +381,4 @@ while True:
     _, predicted = torch.max(output, 1)
 
     for i in range(len(sent)):
-        print(f"{trainData.idx2w[sent[i].item()]}: {trainData.tagIdx2w[predicted[i].item()]}")
+        print(f"{orig[i]}\t{trainData.tagIdx2w[predicted[i].item()]}")
