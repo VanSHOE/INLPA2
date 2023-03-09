@@ -163,7 +163,21 @@ class Data(torch.utils.data.Dataset):
                 else:
                     freq[token[0]] += 1
 
-        self.handle_unknowns(self.vocabSet, self.vocab, self.tagVocabSet, self.tagVocab)
+        for i in range(len(self.sentences)):
+            for j in range(len(self.sentences[i])):
+                if freq[self.sentences[i][j][0]] <= threshold:
+                    t = list(self.sentences[i][j])
+                    if t[0] in self.vocab:
+                        self.vocab.remove(t[0])
+                    if t[0] in self.vocabSet:
+                        self.vocabSet.remove(t[0])
+                    t[0] = "<unk>"
+                    self.sentences[i][j] = tuple(t)
+
+        self.w2idx = {w: i for i, w in enumerate(self.vocab)}
+        self.idx2w = {i: w for i, w in enumerate(self.vocab)}
+        self.sentencesIdx = torch.tensor([[self.w2idx[token[0]] for token in sentence] for sentence in self.sentences],
+                                         device=self.device)
 
     def __len__(self):
         return len(self.sentencesIdx)
@@ -349,6 +363,7 @@ for sentence in data:
     sentences.append(unitSentence)
 
 trainData = Data(sentences.copy(), tags.copy())
+trainData.rem_low_freq(2)
 
 tags = []
 sentences = []
