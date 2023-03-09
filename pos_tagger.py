@@ -350,17 +350,6 @@ for sentence in data:
 
 trainData = Data(sentences.copy(), tags.copy())
 
-if os.path.exists("Final.pt"):
-    print("Loading model...")
-    model = torch.load("Final.pt")
-else:
-    model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
-    model.train_data = trainData
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.CrossEntropyLoss()
-    train(model, trainData, optimizer, criterion, valData, 4)
-    torch.save(model, "Final.pt")
-
 tags = []
 sentences = []
 for sentence in valData:
@@ -374,8 +363,23 @@ for sentence in valData:
     sentences.append(unitSentence)
 
 valData = Data(sentences.copy(), tags.copy())
-valData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
-                        model.train_data.tagVocab)
+
+if os.path.exists("Final.pt"):
+    print("Loading model...")
+    model = torch.load("Final.pt")
+    valData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
+                            model.train_data.tagVocab)
+else:
+    print("Training model...")
+    model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
+    model.train_data = trainData
+    valData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
+                            model.train_data.tagVocab)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
+
+    train(model, trainData, optimizer, criterion, valData, 4)
+    torch.save(model, "Final.pt")
 
 model.eval()
 test = open('./UD_English-Atis/en_atis-ud-test.conllu', 'r', encoding='utf-8')
