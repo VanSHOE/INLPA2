@@ -153,6 +153,18 @@ class Data(torch.utils.data.Dataset):
             [[self.tagW2idx[token[1]] for token in sentence] for sentence in self.sentences],
             device=self.device)
 
+    def rem_low_freq(self, threshold):
+        # remove words with frequency less than threshold
+        freq = {}
+        for sentence in self.sentences:
+            for token in sentence:
+                if token[0] not in freq:
+                    freq[token[0]] = 1
+                else:
+                    freq[token[0]] += 1
+
+        self.handle_unknowns(self.vocabSet, self.vocab, self.tagVocabSet, self.tagVocab)
+
     def __len__(self):
         return len(self.sentencesIdx)
 
@@ -389,7 +401,11 @@ testData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, mode
 
 print(f"Testing Accuracy: {accuracy(model, testData)}")
 # exit(0)
-print(runSkMetric(model, testData))
+result = runSkMetric(model, testData)
+# save to file
+with open("result.txt", "w") as f:
+    f.write(result)
+print(result)
 # exit(0)
 
 sent = str(input("input sentence: ")).split()
