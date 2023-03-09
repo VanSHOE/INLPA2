@@ -153,6 +153,15 @@ class Data(torch.utils.data.Dataset):
             [[self.tagW2idx[token[1]] for token in sentence] for sentence in self.sentences],
             device=self.device)
 
+        self.padIdx = self.w2idx["<pad>"]
+        self.tagPadIdx = self.tagW2idx["<pad>"]
+
+        self.bosIdx = self.w2idx["<bos>"]
+        self.botIdx = self.tagW2idx["<bot>"]
+
+        self.eosIdx = self.w2idx["<eos>"]
+        self.eotIdx = self.tagW2idx["<eot>"]
+
     def rem_low_freq(self, threshold):
         # remove words with frequency less than threshold
         freq = {}
@@ -178,6 +187,15 @@ class Data(torch.utils.data.Dataset):
         self.idx2w = {i: w for i, w in enumerate(self.vocab)}
         self.sentencesIdx = torch.tensor([[self.w2idx[token[0]] for token in sentence] for sentence in self.sentences],
                                          device=self.device)
+
+        self.padIdx = self.w2idx["<pad>"]
+        self.tagPadIdx = self.tagW2idx["<pad>"]
+
+        self.bosIdx = self.w2idx["<bos>"]
+        self.botIdx = self.tagW2idx["<bot>"]
+
+        self.eosIdx = self.w2idx["<eos>"]
+        self.eotIdx = self.tagW2idx["<eot>"]
 
     def __len__(self):
         return len(self.sentencesIdx)
