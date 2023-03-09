@@ -6,6 +6,7 @@ import conllu
 import random
 import time
 from sklearn.metrics import classification_report as cr
+import os
 
 random.seed(time.time())
 
@@ -188,7 +189,7 @@ def getLossDataset(data: Data, model):
 
     dataL = DataLoader(data, batch_size=BATCH_SIZE, shuffle=True)
 
-    criterion = nn.CrossEntropyLoss(ignore_index=data.tagPadIdx)
+    criterionL = nn.CrossEntropyLoss()  # ignore_index=data.tagPadIdx)
     loss = 0
 
     for i, (x, y) in enumerate(dataL):
@@ -200,7 +201,7 @@ def getLossDataset(data: Data, model):
         y = y.view(-1)
         output = output.view(-1, output.shape[-1])
 
-        loss += criterion(output, y).item()
+        loss += criterionL(output, y)
 
     return loss / len(dataL)
 
@@ -255,8 +256,8 @@ def train(model, data, optimizer, criterion, valDat, maxPat=5):
             es_patience = maxPat
         prevValLoss = validationLoss
         model.train()
-        # if epoch_loss / len(dataL) > prevLoss:
-        #     lossDec = False
+        if epoch_loss / len(dataL) > prevLoss:
+            lossDec = False
         prevLoss = epoch_loss / len(dataL)
 
         print(f"Epoch {epoch + 1} loss: {epoch_loss / len(dataL)}")
@@ -337,6 +338,17 @@ for sentence in data:
 
 trainData = Data(sentences.copy(), tags.copy())
 
+if os.path.exists("Final.pt"):
+    print("Loading model...")
+    model = torch.load("Final.pt")
+else:
+    model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
+    model.train_data = trainData
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
+    train(model, trainData, optimizer, criterion, valData, 4)
+    torch.save(model, "Final.pt")
+
 tags = []
 sentences = []
 for sentence in valData:
@@ -350,14 +362,9 @@ for sentence in valData:
     sentences.append(unitSentence)
 
 valData = Data(sentences.copy(), tags.copy())
-valData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
+valData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
+                        model.train_data.tagVocab)
 
-model = LSTM(300, 300, 1, len(trainData.vocab), len(trainData.tagVocab))
-model.train_data = trainData
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-criterion = nn.CrossEntropyLoss(ignore_index=trainData.tagPadIdx)
-# print(f"Training Accuracy: {accuracy(model, trainData)}")
-train(model, trainData, optimizer, criterion, valData)
 model.eval()
 test = open('./UD_English-Atis/en_atis-ud-test.conllu', 'r', encoding='utf-8')
 testData = conllu.parse(test.read())
@@ -374,8 +381,9 @@ for sentence in testData:
     sentences.append(unitSentence)
 
 testData = Data(sentences.copy(), tags.copy())
-testData.handle_unknowns(trainData.vocabSet, trainData.vocab, trainData.tagVocabSet, trainData.tagVocab)
-print(f"Training Accuracy: {accuracy(model, trainData)}")
+testData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
+                         model.train_data.tagVocab)
+print(f"Training Accuracy: {accuracy(model, model.train_data)}")
 
 print(f"Validation Accuracy: {accuracy(model, valData)}")
 
