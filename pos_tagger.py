@@ -448,6 +448,9 @@ print(result)
 sent = str(input("input sentence: ")).split()
 orig = sent.copy()
 
+for i in range(len(sent)):
+    sent[i] = sent[i].lower()
+
 # convert to idx
 for i in range(len(sent)):
     if sent[i] in model.train_data.vocab:
@@ -462,4 +465,4 @@ output = torch.nn.functional.softmax(output, dim=1)
 _, predicted = torch.max(output, 1)
 
 for i in range(len(sent)):
-    print(f"{orig[i]}\t{model.train_data.tagIdx2w[predicted[i].item()]}")
+    print(f"{orig[i]}\t{model.train_data.tagIdx2w[predicted[i].item()].upper()}")
