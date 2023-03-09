@@ -383,30 +383,30 @@ for sentence in testData:
 testData = Data(sentences.copy(), tags.copy())
 testData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
                          model.train_data.tagVocab)
-print(f"Training Accuracy: {accuracy(model, model.train_data)}")
-
-print(f"Validation Accuracy: {accuracy(model, valData)}")
+# print(f"Training Accuracy: {accuracy(model, model.train_data)}")
+#
+# print(f"Validation Accuracy: {accuracy(model, valData)}")
 
 print(f"Testing Accuracy: {accuracy(model, testData)}")
 # exit(0)
 print(runSkMetric(model, testData))
 # exit(0)
-while True:
-    sent = str(input("input sentence: ")).split()
-    orig = sent.copy()
 
-    # convert to idx
-    for i in range(len(sent)):
-        if sent[i] in trainData.vocab:
-            sent[i] = trainData.w2idx[sent[i]]
-        else:
-            sent[i] = trainData.w2idx["<unk>"]
+sent = str(input("input sentence: ")).split()
+orig = sent.copy()
 
-    sent = torch.tensor(sent).to(model.device)
-    output = model(sent)
-    # softmax and output tag
-    output = torch.nn.functional.softmax(output, dim=1)
-    _, predicted = torch.max(output, 1)
+# convert to idx
+for i in range(len(sent)):
+    if sent[i] in model.train_data.vocab:
+        sent[i] = model.train_data.w2idx[sent[i]]
+    else:
+        sent[i] = model.train_data.w2idx["<unk>"]
 
-    for i in range(len(sent)):
-        print(f"{orig[i]}\t{trainData.tagIdx2w[predicted[i].item()]}")
+sent = torch.tensor(sent).to(model.device)
+output = model(sent)
+# softmax and output tag
+output = torch.nn.functional.softmax(output, dim=1)
+_, predicted = torch.max(output, 1)
+
+for i in range(len(sent)):
+    print(f"{orig[i]}\t{model.train_data.tagIdx2w[predicted[i].item()]}")
