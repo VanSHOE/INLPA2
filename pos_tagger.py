@@ -399,9 +399,9 @@ for sentence in testData:
 testData = Data(sentences.copy(), tags.copy())
 testData.handle_unknowns(model.train_data.vocabSet, model.train_data.vocab, model.train_data.tagVocabSet,
                          model.train_data.tagVocab)
-# print(f"Training Accuracy: {accuracy(model, model.train_data)}")
+print(f"Training Accuracy: {accuracy(model, model.train_data)}")
 #
-# print(f"Validation Accuracy: {accuracy(model, valData)}")
+print(f"Validation Accuracy: {accuracy(model, valData)}")
 
 print(f"Testing Accuracy: {accuracy(model, testData)}")
 # exit(0)
